@@ -1,4 +1,13 @@
 #!/bin/bash
+#Adding variables to possible MacOS compatibilty
+#GS=/usr/bin/gs
+#PBMTOJBG=/usr/bin/pbmtojbg
+#IDENTIFY=/usr/bin/identify
+
+#Restoring to original values
+GS=gs
+PBMTOJBG=pbmtojbg
+IDENTIFY=identify
 
 # Debug mode: change to 'yes' to enable
 DEBUG=no
@@ -21,6 +30,66 @@ function trapINT() {
 function stop() {
     log "Stop stop page";
     echo "stop" > $uid/999999999-page.pbm
+}
+
+function pageOutput() {
+
+# Converting page to JBIG format (parameters are very special for this printer!)
+$PBMTOJBG -p 72 -o 3 -m 0 -q < $uid/$page > $uid/raster.jbig
+
+# Taking image size
+jsize=`wc -c < $uid/raster.jbig`
+
+# Taking image dimensions
+#read fn ft xs ys garb < <($IDENTIFY $uid/$page | tr "x" " ") #Not work under MacOS
+ident=`$IDENTIFY $uid/$page | tr "x" " "`
+xs=`echo $ident | awk ' { print $3 } '`
+ys=`echo $ident | awk ' { print $4 } '`
+log "Identified as ${xs}x${ys}"
+
+# Flushing page header
+cat <<EOF
+@PJL SET PAGESTATUS=START$e
+@PJL SET COPIES=1$e
+@PJL SET MEDIASOURCE=$mediasource$e
+@PJL SET MEDIATYPE=PLAINRECYCLE$e
+@PJL SET PAPER=$pagesize$e
+@PJL SET PAPERWIDTH=$xs$e
+@PJL SET PAPERLENGTH=$ys$e
+@PJL SET RESOLUTION=${resolution%x600}$e
+@PJL SET IMAGELEN=$jsize$e
+EOF
+
+# Flushing image
+cat $uid/raster.jbig
+
+# Flushing page footer
+# TODO: pixelcount for toner estimate
+cat <<EOF
+@PJL SET DOTCOUNT=1132782$e
+@PJL SET PAGESTATUS=END$e
+EOF
+
+#end of pageOutput
+}
+
+function pjlHeader() {
+cat <<EOF
+%-12345X@PJL$e
+@PJL SET TIMESTAMP=$ddate$e
+@PJL SET FILENAME=Document$e
+@PJL SET COMPRESS=JBIG$e
+@PJL SET USERNAME=$user$e
+@PJL SET COVER=OFF$e
+@PJL SET HOLD=OFF$e
+EOF
+}
+
+function pjlFooter() {
+cat <<EOF
+@PJL EOJ$e
+%-12345X
+EOF
 }
 
 log "Called with cmdline: $0 $*"
@@ -62,7 +131,7 @@ ddate="`LC_ALL=en_US.UTF-8 date '+%Y/%m/%d %H:%M:%S'`"
 # Temporary directory
 uid="/tmp/pstoricohddst-gdi-`uuidgen`"
 mkdir -p $uid
-[ "${DEBUG}" = "yes" ] && exec >$uid/output.stream #> >(tee $uid/output.stream)
+[ "${DEBUG}" = "yes" ] && exec >$uid/output.stream #> >(tee $uid/output.stream) #does not work under MacOS
 
 [ -x "$(which inotifywait)" ] && {
 	log "Asynchronous variant"
@@ -73,67 +142,27 @@ mkdir -p $uid
 	    log "Page submitted"
 	    [ "$stage" = "empty" ] && {
 		log "1st stage. Flushing PJL header"
-		cat <<EOF
-%-12345X@PJL$e
-@PJL SET TIMESTAMP=$ddate$e
-@PJL SET FILENAME=Document$e
-@PJL SET COMPRESS=JBIG$e
-@PJL SET USERNAME=$user$e
-@PJL SET COVER=OFF$e
-@PJL SET HOLD=OFF$e
-EOF
+		pjlHeader;
 
 		stage="printing"
 	    }
 	    [ "$page" = "999999999-page.pbm" ] && { 
 		log "Last stage. Flushing PJL footer"
-		cat <<EOF
-@PJL EOJ$e
-%-12345X
-EOF
+		pjlFooter;
+		
 		pid=`ps ax | grep $uid | grep -v grep | awk ' { print $1 } '`
 		[ ! "x$pid" = "x" ] && kill $pid
 		break
 	    }
 	    [ "$stage" = "printing" ] && {
-		# Converting page to JBIG format (parameters are very special for this printer!)
-		pbmtojbg -p 72 -o 3 -m 0 -q < $uid/$page > $uid/raster.jbig
-
-		# Taking image size
-		jsize=`wc -c < $uid/raster.jbig`
-
-		# Taking image dimensions
-		read fn ft xs ys garb < <(identify $uid/$page | tr "x" " ")
-
-		# Flushing page header
-		cat <<EOF
-@PJL SET PAGESTATUS=START$e
-@PJL SET COPIES=1$e
-@PJL SET MEDIASOURCE=$mediasource$e
-@PJL SET MEDIATYPE=PLAINRECYCLE$e
-@PJL SET PAPER=$pagesize$e
-@PJL SET PAPERWIDTH=$xs$e
-@PJL SET PAPERLENGTH=$ys$e
-@PJL SET RESOLUTION=${resolution%x600}$e
-@PJL SET IMAGELEN=$jsize$e
-EOF
-
-		log "Flushing image $page"
-		cat $uid/raster.jbig
-
-		# Flushing page footer
-		# TODO: pixelcount for toner estimate
-		cat <<EOF
-@PJL SET DOTCOUNT=1132782$e
-@PJL SET PAGESTATUS=END$e
-EOF
+		pageOutput;
 	    }
 	done
 	) &
 
 	# Converting from PostScript to PostScript-monochrome, then to PBM image format (per page)
-	#gs -sDEVICE=ps2write -sOutputFile=- -r$resolution -dQUIET -dBATCH -dNOPAUSE - | 
-	gs -sDEVICE=pbmraw -sOutputFile=${uid}/%03d-page.pbm -r$resolution -dQUIET -dBATCH -dNOPAUSE -
+	#$GS -sDEVICE=ps2write -sOutputFile=- -r$resolution -dQUIET -dBATCH -dNOPAUSE - | 
+	$GS -sDEVICE=pbmraw -sOutputFile=${uid}/%03d-page.pbm -r$resolution -dQUIET -dBATCH -dNOPAUSE -
 
 	stop
 	wait
@@ -144,64 +173,25 @@ EOF
 
 	# Converting from PostScript to PostScript-monochrome, then to PBM image format (per page)
 	log "Converting document to pages"
-	gs -sDEVICE=ps2write -sOutputFile=- -r$resolution -dQUIET -dBATCH -dNOPAUSE - | gs -sDEVICE=pbmraw -sOutputFile=${uid}/%03d-page.pbm -r$resolution -dQUIET -dBATCH -dNOPAUSE -
+	$GS -sDEVICE=ps2write -sOutputFile=- -r$resolution -dQUIET -dBATCH -dNOPAUSE - | $GS -sDEVICE=pbmraw -sOutputFile=${uid}/%03d-page.pbm -r$resolution -dQUIET -dBATCH -dNOPAUSE -
 	log "Conversion complete"
 
-	cat <<EOF
-%-12345X@PJL$e
-@PJL SET TIMESTAMP=$ddate$e
-@PJL SET FILENAME=Document$e
-@PJL SET COMPRESS=JBIG$e
-@PJL SET USERNAME=$user$e
-@PJL SET COVER=OFF$e
-@PJL SET HOLD=OFF$e
-EOF
+	pjlHeader;
 
-	for page in ${uid}/*-page.pbm; do
-
+	ls -1 $uid | grep "page.pbm" | while read page; do
+	#for page in ${uid}/*-page.pbm; do #looks untested - does not work
 		log "Page $page"
-		# Converting page to JBIG format (parameters are very special for this printer!)
-		pbmtojbg -p 72 -o 3 -m 0 -q < $page > $uid/raster.jbig
+		
+		pageOutput;
 
-		# Taking image size
-		jsize=`wc -c < $uid/raster.jbig`
-
-		# Taking image dimensions
-		read fn ft xs ys garb < <(identify $page | tr "x" " ")
-		log "Identified as ${xs}x${ys}"
-
-		# Flushing page header
-		cat <<EOF
-@PJL SET PAGESTATUS=START$e
-@PJL SET COPIES=1$e
-@PJL SET MEDIASOURCE=$mediasource$e
-@PJL SET MEDIATYPE=PLAINRECYCLE$e
-@PJL SET PAPER=$pagesize$e
-@PJL SET PAPERWIDTH=$xs$e
-@PJL SET PAPERLENGTH=$ys$e
-@PJL SET RESOLUTION=${resolution%x600}$e
-@PJL SET IMAGELEN=$jsize$e
-EOF
-
-		# Flushing image
-		cat $uid/raster.jbig
-
-		# Flushing page footer
-		# TODO: pixelcount for toner estimate
-		cat <<EOF
-@PJL SET DOTCOUNT=1132782$e
-@PJL SET PAGESTATUS=END$e
-EOF
 	done
 
 	# Flushing PJL footer
-	cat <<EOF
-@PJL EOJ$e
-%-12345X
-EOF
-
+	pjlFooter;
+	
+	if [ ! "${DEBUG}" = "yes" ]; then
+	    rm -rf $uid
+	fi
 }
-
-#rm -rf $uid;
 
 exit 0
