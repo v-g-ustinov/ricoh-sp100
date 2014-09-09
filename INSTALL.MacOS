@@ -1,0 +1,12 @@
+In MacOS (hate it) you need install macports and then:
+#sudo port sync
+#sudo port install ImageMagick
+
+In pstoricohddst-gdi file uncomment (remove heading "#") three lines in the beginning of file, after line:
+"#Next three lines must be uncommented in MacOS".
+And comment (add "#" to begin of the line) three lines after line:
+"# Next three line must be uncommented in Linux"
+
+Then look INSTALL instructions.
+
+P.S. inotify-wait does not exist for mac - it is not needed by script, it is optional. Do not worry about it.
