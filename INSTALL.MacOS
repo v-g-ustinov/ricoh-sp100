@@ -1,12 +1,20 @@
-In MacOS (hate it) you need install macports and then:
+In MacOS you need install macports and then:
 #sudo port sync
 #sudo port install ImageMagick
 
 In pstoricohddst-gdi file uncomment (remove heading "#") three lines in the beginning of file, after line:
-"#Next three lines must be uncommented in MacOS".
+"#Next four lines must be uncommented in MacOS".
 And comment (add "#" to begin of the line) three lines after line:
-"# Next three line must be uncommented in Linux"
+"# Next four lines must be uncommented in Linux"
+
+Then we should disble strict sandbox for cups. Otherwise it have no access to Ghostscript and other necessary utilities.
+DO NOT RUN THIS ON A MACHINE RUNNING MAC OS 10.9 OR BELOW
+    sudo sh -c 'echo "Sandboxing Relaxed" >> /etc/cups/cups-files.conf'
+    sudo launchctl stop org.cups.cupsd
+I'd tested this on High Sierra with Sandboxing Relaxed in the begining of cups-files.conf
 
 Then look INSTALL instructions.
 
 P.S. inotify-wait does not exist for mac - it is not needed by script, it is optional. Do not worry about it.
+P.P.S. After years with linux I finally switch to Mac. I've made that decission because thik that I was
+too tired fighting endless Linux bugs - I'm talking about desktops. And face another tons here... :)

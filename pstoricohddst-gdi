@@ -1,14 +1,16 @@
 #!/bin/bash
 
-#Next three lines must be uncommented in MacOS
+#Next four lines must be uncommented in MacOS
 #GS=/opt/local/bin/gs
 #PBMTOJBG=/opt/local/bin/pbmtojbg
 #IDENTIFY=/opt/local/bin/identify
+#uid="/var/spool/cups/tmp/pstoricohddst-gdi-`uuidgen`"
 
-# Next three line must be uncommented in Linux
+# Next four lines must be uncommented in Linux
 GS=gs
 PBMTOJBG=pbmtojbg
 IDENTIFY=identify
+uid="/tmp/pstoricohddst-gdi-`uuidgen`"
 
 # Debug mode: change to 'yes' to enable
 DEBUG=no
@@ -172,6 +174,8 @@ if [ -x "$(which inotifywait)" ]; then {
     }
 else  {
 	log "Synchronous variant"
+	mkdir ${uid}/gs-temp
+        export TEMP=${uid}/gs-temp
 
 	# Converting from PostScript to PostScript-monochrome, then to PBM image format (per page)
 	log "Converting document to pages"
